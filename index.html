@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HandiMap - Itinéraire</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <form id="search-container" class="search-container">
+        <input type="text" id="start-input" list="start-suggestions" placeholder="Point de départ..." autocomplete="off" class="main-input">
+        <datalist id="start-suggestions"></datalist>
+        
+        <input type="text" id="end-input" list="end-suggestions" placeholder="Point d'arrivée..." autocomplete="off" class="main-input" style="margin-top: 8px;">
+        <datalist id="end-suggestions"></datalist>
+
+        <button type="submit" id="btn-global">
+            🚀 CALCULER L'ITINÉRAIRE
+        </button>
+    </form>
+
+    <div id="map"></div>
+    
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

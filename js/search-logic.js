@@ -32,7 +32,7 @@ export async function searchAddress(query, type, apiKey, mapInstance) {
             const [lng, lat] = data.features[0].geometry.coordinates;
             const coords = [lat, lng];
 
-            console.log(`📍 Coordonnées ${type.toUpperCase()} :`, coords);
+            console.log(`Coordonnées ${type.toUpperCase()} :`, coords);
 
             if (type === 'start') {
                 if (startMarker) mapInstance.removeLayer(startMarker);

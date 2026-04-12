@@ -1,6 +1,7 @@
 import { CONFIG } from './config.js';
 import { map, initTileLayers } from './map-engine.js';
 import { fetchSuggestions, searchAddress } from './search-logic.js';
+import { calculateAndDisplayRoute } from './routing-engine.js';
 
 initTileLayers(CONFIG.JAWG_API_KEY);
 
@@ -12,9 +13,21 @@ searchForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     if (startInput.value && endInput.value) {
-        // On récupère les deux positions sans zoomer entre les deux
-        await searchAddress(startInput.value, 'start', CONFIG.JAWG_API_KEY, map);
-        await searchAddress(endInput.value, 'end', CONFIG.JAWG_API_KEY, map);
+        // Récupère les deux positions
+        const startCoords = await searchAddress(startInput.value, 'start', CONFIG.JAWG_API_KEY, map);
+        const endCoords = await searchAddress(endInput.value, 'end', CONFIG.JAWG_API_KEY, map);
+        
+        // Calcule et affiche la route pour piétons avec OSRM
+        if (startCoords && endCoords) {
+            const routeInfo = await calculateAndDisplayRoute(
+                startCoords,
+                endCoords,
+                map
+            );
+            if (routeInfo) {
+                console.log(`Route piéton: ${routeInfo.distance}, ${routeInfo.time}`);
+            }
+        }
     } else {
         alert("Veuillez remplir le départ et l'arrivée.");
     }

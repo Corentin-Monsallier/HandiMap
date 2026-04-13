@@ -1,51 +1,33 @@
-body {
-    margin: 0;
-    padding: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-#map {
-    height: 100vh;
-    width: 100vw;
-}
+body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+#map { height: 100vh; width: 100vw; }
 
 .search-container {
-    position: absolute;
-    top: 50px;
-    left: 50px; /* Ajusté pour plus d'espace */
-    z-index: 1000;
-    width: 350px;
-    display: flex;
-    flex-direction: column;
+    position: absolute; top: 20px; left: 20px; z-index: 1000;
+    width: 350px; background: white; padding: 15px;
+    border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
 }
 
-/* Style appliqué aux deux inputs */
-.main-input, #start-input, #end-input {
-    width: 100%;
-    padding: 12px 15px;
-    border: none;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    font-size: 14px;
-    outline: none;
-    box-sizing: border-box;
+.main-input {
+    width: 100%; padding: 12px; border: 1px solid #ccc;
+    border-radius: 8px; box-sizing: border-box; margin-bottom: 5px;
 }
 
 #btn-global {
-    margin-top: 10px;
-    padding: 12px;
-    background-color: #27ae60;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-weight: bold;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    transition: background 0.2s;
+    width: 100%; padding: 12px; background: #27ae60;
+    color: white; border: none; border-radius: 8px;
+    font-weight: bold; cursor: pointer;
 }
 
-#btn-global:hover {
-    background-color: #219150;
+/* Styles pour la liste des trajets */
+.journey-item {
+    background: #f9f9f9; border: 1px solid #eee;
+    border-radius: 8px; padding: 12px; margin-top: 8px;
+    cursor: pointer; transition: 0.2s; font-size: 13px;
 }
+.journey-item:hover { border-color: #0078d4; }
+.journey-item.active { border-left: 6px solid #0078d4; background: #f0f7ff; }
 
-/* On garde tes styles de suggestions pour les datalists (natif au navigateur ici) */
+.line-badge {
+    display: inline-block; padding: 2px 6px; border-radius: 4px;
+    color: white; font-size: 11px; font-weight: bold; margin-right: 4px;
+}

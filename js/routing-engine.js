@@ -1,176 +1,131 @@
 /**
- * OSRM (Open Source Routing Machine) Routing Service
- * Handles route calculation, display, and route information management
- * Uses free public OSRM servers - no API key required
+ * Routing Service utilisant Navitia (PRIM Île-de-France Mobilités)
  */
+import { CONFIG } from './config.js';
 
-let routingLine = null;
+let routingLayers = []; // Tableau pour stocker les différents segments (polylines)
 let routeInfo = null;
 
-const routeLineStyle = {
-    color: '#2ecc71',
-    weight: 5,
-    opacity: 0.8,
-    dashArray: null // Solid line for actual route
-};
-
-// OSRM public server - free and no authentication needed
-const OSRM_SERVER = 'https://router.project-osrm.org/route/v1';
-
 /**
- * Test OSRM API connectivity
- * @returns {Promise<boolean>} True if API is reachable
+ * Définit le style visuel en fonction du type de section (marche ou transport)
  */
-export async function testOSRMConnection() {
-    try {
-        // Test with a simple Paris to nearby point request (foot profile for pedestrians)
-        const url = `${OSRM_SERVER}/foot/2.3522,48.8566;2.2936,48.8606?overview=false`;
-        const response = await fetch(url);
-        console.log(`OSRM API test response: ${response.status}`);
-        return response.ok;
-    } catch (err) {
-        console.error('OSRM connection test failed:', err.message);
-        return false;
+function getSectionStyle(section) {
+    // Si c'est de la marche à pied ou une attente
+    if (section.type === 'street_network' || section.type === 'waiting' || section.type === 'transfer') {
+        return {
+            color: '#808080', // Gris
+            weight: 5,
+            opacity: 0.6,
+            dashArray: '5, 10' // Effet pointillé pour la marche
+        };
     }
+    
+    // Pour les transports en commun, on utilise la couleur officielle de la ligne renvoyée par PRIM
+    // Le format Navitia est une couleur hexa sans le '#' (ex: "0078d4")
+    const lineCol = section.display_informations?.color;
+    
+    return {
+        color: lineCol ? `#${lineCol}` : '#0078d4', // Couleur de ligne ou bleu par défaut
+        weight: 8,
+        opacity: 0.9,
+        lineJoin: 'round'
+    };
 }
 
 /**
- * Fetches a pedestrian route from OSRM API
- * @param {[number, number]} startCoords - [latitude, longitude]
- * @param {[number, number]} endCoords - [latitude, longitude]
- * @returns {Promise<Object>} Route data or null if request fails
+ * Récupère un itinéraire via l'API Navitia de PRIM
  */
 export async function fetchRoute(startCoords, endCoords) {
     const [startLat, startLng] = startCoords;
     const [endLat, endLng] = endCoords;
     
-    // OSRM expects lng,lat format (reversed from Leaflet)
-    const coordinates = `${startLng},${startLat};${endLng},${endLat}`;
+    const from = `${startLng};${startLat}`;
+    const to = `${endLng};${endLat}`;
     
-    // Always use 'foot' profile for pedestrian routing
-    const profile = 'foot';
-    
-    const url = `${OSRM_SERVER}/${profile}/${coordinates}?overview=full&geometries=geojson`;
-
-    console.log(`OSRM request: ${url}`);
+    const url = `https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/journeys?from=${from}&to=${to}`;
 
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'apikey': CONFIG.NAVITIA_TOKEN,
+                'Accept': 'application/json'
+            }
+        });
         
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`OSRM API error (${response.status}):`, errorText);
-            return null;
-        }
+        if (!response.ok) throw new Error(`Erreur Navitia: ${response.status}`);
         
         const data = await response.json();
+        if (!data.journeys || data.journeys.length === 0) return null;
         
-        if (!data.routes || data.routes.length === 0) {
-            console.warn('No route found in OSRM response');
-            return null;
-        }
-        
-        const route = data.routes[0]; // Take the first (best) route
-        
-        // Convert GeoJSON coordinates [lng, lat] to [lat, lng] for Leaflet
-        const points = route.geometry.coordinates.map(coord => ({
-            lat: coord[1],
-            lng: coord[0]
-        }));
+        const journey = data.journeys[0];
         
         routeInfo = {
-            distance: route.distance, // meters
-            time: route.duration, // seconds
-            profile: 'foot',
-            points: points // Array of {lat, lng} objects
+            distance: journey.distances?.walking || 0,
+            duration: journey.duration,
+            sections: journey.sections // On stocke les sections pour le rendu segmenté
         };
         
-        console.log(`Pedestrian route found: ${(route.distance / 1000).toFixed(2)} km, ${Math.round(route.duration / 60)} min`);
         return routeInfo;
     } catch (err) {
-        console.error('OSRM fetch error:', err.message);
-        console.error('Error type:', err.name);
+        console.error('Erreur Navitia:', err);
         return null;
     }
 }
 
 /**
- * Displays the route on the Leaflet map
- * @param {Object} mapInstance - Leaflet map instance
- * @param {Object} routeData - Route data from fetchRoute
- * @returns {L.Polyline} The polyline layer
+ * Affiche le tracé segmenté sur la carte
  */
 export function displayRoute(mapInstance, routeData) {
-    if (!routeData || !routeData.points) return null;
+    if (!routeData || !routeData.sections) return;
     
-    // Remove existing route line if present
-    if (routingLine) {
-        mapInstance.removeLayer(routingLine);
+    // Nettoyage des tracés précédents
+    clearRoute(mapInstance);
+
+    routeData.sections.forEach(section => {
+        // On ne trace que les sections possédant une géométrie
+        if (section.geojson && section.geojson.coordinates) {
+            const coords = section.geojson.coordinates.map(c => [c[1], c[0]]);
+            const style = getSectionStyle(section);
+            
+            const polyline = L.polyline(coords, style).addTo(mapInstance);
+            
+            // Ajout d'une info-bulle au survol/clic sur un tronçon de transport
+            if (section.display_informations) {
+                const info = section.display_informations;
+                polyline.bindPopup(`<strong>${info.network} ${info.code}</strong><br>Direction: ${info.direction}`);
+            }
+
+            routingLayers.push(polyline);
+        }
+    });
+
+    // Ajustement de la vue pour englober tout l'itinéraire
+    if (routingLayers.length > 0) {
+        const featureGroup = L.featureGroup(routingLayers);
+        mapInstance.fitBounds(featureGroup.getBounds().pad(0.2));
     }
-    
-    // Convert point array to Leaflet-compatible format [lat, lng]
-    const coordinates = routeData.points.map(point => [point.lat, point.lng]);
-    
-    // Create and add the polyline
-    routingLine = L.polyline(coordinates, routeLineStyle).addTo(mapInstance);
-    
-    // Optional: Animate the map bounds to fit the route
-    mapInstance.fitBounds(routingLine.getBounds().pad(0.1));
-    
-    return routingLine;
 }
 
 /**
- * Formats route information for display
- * @param {Object} routeData - Route data from fetchRoute
- * @returns {Object} Formatted data with distance (km), time (min), and profile
- */
-export function formatRouteInfo(routeData) {
-    if (!routeData) return null;
-    
-    return {
-        distance: `${(routeData.distance / 1000).toFixed(2)} km`,
-        time: `${Math.round(routeData.time / 60000)} min`,
-        profile: routeData.profile,
-        raw: routeData // Keep raw data for further processing
-    };
-}
-
-/**
- * Clears the routing line from the map
- * @param {Object} mapInstance - Leaflet map instance
- */
-export function clearRoute(mapInstance) {
-    if (routingLine) {
-        mapInstance.removeLayer(routingLine);
-        routingLine = null;
-    }
-    routeInfo = null;
-}
-
-/**
- * Gets the current route information
- * @returns {Object|null} Current route data or null
- */
-export function getRouteInfo() {
-    return routeInfo;
-}
-
-/**
- * Complete routing workflow: fetch and display pedestrian route
- * @param {[number, number]} startCoords - [latitude, longitude]
- * @param {[number, number]} endCoords - [latitude, longitude]
- * @param {Object} mapInstance - Leaflet map instance
- * @returns {Promise<Object>} Route info or null if failed
+ * Workflow complet
  */
 export async function calculateAndDisplayRoute(startCoords, endCoords, mapInstance) {
     const routeData = await fetchRoute(startCoords, endCoords);
-    
     if (routeData) {
         displayRoute(mapInstance, routeData);
-        return formatRouteInfo(routeData);
-    } else {
-        console.warn('Failed to calculate route');
-        return null;
+        return {
+            distance: `${(routeData.distance / 1000).toFixed(2)} km à pied`,
+            time: `${Math.round(routeData.duration / 60)} min`
+        };
     }
+    return null;
+}
+
+/**
+ * Supprime tous les segments de la carte
+ */
+export function clearRoute(mapInstance) {
+    routingLayers.forEach(layer => mapInstance.removeLayer(layer));
+    routingLayers = [];
 }

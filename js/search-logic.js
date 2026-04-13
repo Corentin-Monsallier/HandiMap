@@ -1,6 +1,5 @@
 let startMarker = null;
 let endMarker = null;
-let routingLine = null;
 
 const startIcon = L.icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
@@ -32,8 +31,6 @@ export async function searchAddress(query, type, apiKey, mapInstance) {
             const [lng, lat] = data.features[0].geometry.coordinates;
             const coords = [lat, lng];
 
-            console.log(`Coordonnées ${type.toUpperCase()} :`, coords);
-
             if (type === 'start') {
                 if (startMarker) mapInstance.removeLayer(startMarker);
                 startMarker = L.marker(coords, { icon: startIcon }).addTo(mapInstance);
@@ -42,23 +39,15 @@ export async function searchAddress(query, type, apiKey, mapInstance) {
                 endMarker = L.marker(coords, { icon: endIcon }).addTo(mapInstance);
             }
 
-            // On ne fait le zoom (updateView) que si les deux points existent
+            // Zoom sur les points présents sans tracer de ligne directe
             if (startMarker && endMarker) {
-                updateView(mapInstance);
+                const group = L.featureGroup([startMarker, endMarker]);
+                mapInstance.fitBounds(group.getBounds().pad(0.3));
+            } else {
+                mapInstance.setView(coords, 15);
             }
             
             return coords;
         }
-    } catch (e) { console.error(e); }
-}
-
-function updateView(mapInstance) {
-    const points = [startMarker.getLatLng(), endMarker.getLatLng()];
-    
-    // Mise à jour de la ligne
-    if (routingLine) mapInstance.removeLayer(routingLine);
-    routingLine = L.polyline(points, { color: '#2ecc71', weight: 4, dashArray: '5, 10' }).addTo(mapInstance);
-    
-    // Zoom final sur l'ensemble du tracé
-    mapInstance.fitBounds(L.featureGroup([startMarker, endMarker]).getBounds().pad(0.3));
+    } catch (e) { console.error("Erreur de recherche d'adresse :", e); }
 }

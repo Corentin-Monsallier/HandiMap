@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>HandiMap - Registre Complet des Gares</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; background-color: #f4f7f6; }
+        .station { 
+            background: white; 
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 8px solid #ccc; /* Couleur par défaut */
+        }
+        .tag { 
+            display: inline-block; 
+            padding: 4px 12px; 
+            color: white; 
+            border-radius: 12px; 
+            font-size: 11px; 
+            margin-right: 5px; 
+            font-weight: bold; 
+            text-shadow: 0px 1px 2px rgba(0,0,0,0.2);
+        }
+        .stats-banner { background: #0078d4; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; position: sticky; top: 10px; z-index: 100; }
+        .loader { font-weight: bold; color: #0078d4; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="stats-banner">
+        <h2 style="margin:0">Registre d'Accessibilité IDFM</h2>
+        <div id="counter">Cliquez sur charger pour voir toutes les stations</div>
+    </div>
+
+    <button onclick="fetchAllGares()" id="load-btn" style="width:100%; padding:15px; background:#27ae60; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">
+        CHARGER TOUT LE REGISTRE (BOUCLE OFFSET)
+    </button>
+
+    <div id="results"></div>
+
+    <script>
+        // Fonction pour mapper l'ID aux couleurs demandées
+        function getAccessibilityStyle(id) {
+            switch(parseInt(id)) {
+                case 1:
+                    return { color: "#95a5a6", label: "Non accessible" }; // Gris
+                case 3:
+                    return { color: "#e67e22", label: "Sur réservation (Assist'enGare)" }; // Orange
+                case 4:
+                    return { color: "#f1c40f", label: "Sur demande (Agent en station)" }; // Jaune/Or
+                case 6:
+                    return { color: "#2ecc71", label: "En toute autonomie" }; // Vert
+                default:
+                    return { color: "#bdc3c7", label: "Niveau inconnu" }; // Gris clair
+            }
+        }
+
+        async function fetchAllGares() {
+            const resDiv = document.getElementById('results');
+            const counter = document.getElementById('counter');
+            const loadBtn = document.getElementById('load-btn');
+            
+            loadBtn.disabled = true;
+            loadBtn.innerText = "Chargement en cours...";
+            resDiv.innerHTML = '<div class="loader">Initialisation de la boucle de récupération...</div>';
+            
+            let allResults = [];
+            let offset = 0;
+            const limit = 100; 
+            let totalCount = 0;
+
+            try {
+                const firstUrl = `https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/accessibilite-en-gare/records?limit=${limit}&offset=${offset}`;
+                const firstResponse = await fetch(firstUrl);
+                const firstData = await firstResponse.json();
+                
+                totalCount = firstData.total_count;
+                allResults = [...firstData.results];
+                
+                while (allResults.length < totalCount) {
+                    offset += limit;
+                    counter.innerText = `Récupération : ${allResults.length} / ${totalCount} stations...`;
+                    
+                    const nextUrl = `https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/accessibilite-en-gare/records?limit=${limit}&offset=${offset}`;
+                    const nextResponse = await fetch(nextUrl);
+                    const nextData = await nextResponse.json();
+                    
+                    if (nextData.results.length === 0) break;
+                    allResults = [...allResults, ...nextData.results];
+                }
+
+                counter.innerText = `Analyse terminée : ${allResults.length} stations chargées.`;
+                resDiv.innerHTML = "";
+
+                allResults.forEach(g => {
+                    const style = getAccessibilityStyle(g.accessibility_level_id);
+                    
+                    resDiv.innerHTML += `
+                        <div class="station" style="border-left-color: ${style.color}">
+                            <strong>${g.stop_name}</strong> 
+                            <span class="tag" style="background-color: ${style.color}">${style.label}</span><br>
+                            <p style="margin: 10px 0 0 0; font-size: 0.9em;">
+                                🆔 ID Niveau : <strong>${g.accessibility_level_id}</strong><br>
+                                🏷️ Label API : ${g.accessibility_level_name || 'N/A'}
+                            </p>
+                            <div style="font-size: 0.8em; color: #666; margin-top:5px;">Code Gare : ${g.stop_point_id.split(':').pop()}</div>
+                        </div>`;
+                });
+
+            } catch (e) {
+                resDiv.innerHTML = `<div style="color:red">Erreur lors de la boucle : ${e.message}</div>`;
+            } finally {
+                loadBtn.style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html>

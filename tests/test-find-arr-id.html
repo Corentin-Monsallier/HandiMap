@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>HandiMap - Explorateur par Nom</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background-color: #f4f7f6; }
+        .search-box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        .result-item { 
+            background: white; margin-top: 10px; padding: 15px; border-radius: 8px; 
+            border-left: 5px solid #3498db; display: flex; justify-content: space-between;
+        }
+        .id-label { font-family: monospace; color: #e67e22; font-weight: bold; background: #fdf2e9; padding: 2px 5px; }
+    </style>
+</head>
+<body>
+
+    <div class="search-box">
+        <h2>🔍 Trouver l'ID d'une station</h2>
+        <input type="text" id="nameInput" placeholder="Tapez le nom (ex: Poissonniere, Chatelet...)" oninput="searchByName()">
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function searchByName() {
+            const query = document.getElementById('nameInput').value.trim();
+            const resDiv = document.getElementById('results');
+            
+            if (query.length < 3) {
+                resDiv.innerHTML = "";
+                return;
+            }
+
+            // On utilise "suggest" ou "like" pour trouver les noms approchants
+            const url = `https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/arrets/records?where=suggest(arrname%2C%20%22${query}%22)&limit=5`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                resDiv.innerHTML = "";
+                data.results.forEach(stop => {
+                    typeLower = stop.arrtype
+                    if (typeLower === "rail") {
+                        typeLower = "RER";
+                    }
+                    resDiv.innerHTML += `
+                        <div class="result-item">
+                            <div>
+                                <strong>${stop.arrname}</strong><br>
+                                <small>${typeLower || 'Type inconnu'}</small>
+                            </div>
+                            <div>
+                                <span class="id-label">${stop.arrid}</span>
+                            </div>
+                        </div>`;
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>

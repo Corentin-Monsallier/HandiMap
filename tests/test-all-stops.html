@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>HandiMap - Recherche ArRId (RER & Bus)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 700px; margin: 30px auto; padding: 20px; background-color: #f0f4f8; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .input-group { display: flex; gap: 10px; margin: 20px 0; }
+        input { flex: 1; padding: 12px; border: 2px solid #ddd; border-radius: 6px; }
+        button { padding: 12px 25px; background: #3498db; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        #status { margin-top: 20px; padding: 15px; border-radius: 6px; display: none; }
+        .success { display: block !important; background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { display: block !important; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info-tag { font-size: 0.8em; background: #e1f5fe; color: #01579b; padding: 2px 8px; border-radius: 4px; margin-top: 5px; display: inline-block; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Vérificateur d'Arrêt</h2>
+        <p>Note : Les types <strong>Rail</strong> sont affichés comme <strong>RER</strong>.</p>
+        
+        <div class="input-group">
+            <input type="text" id="idInput" placeholder="Entrez un ArRId (ex: 41164)" value="41164">
+            <button onclick="checkArRId()">VÉRIFIER</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        async function checkArRId() {
+            const id = document.getElementById('idInput').value.trim();
+            const statusDiv = document.getElementById('status');
+            
+            statusDiv.className = "";
+            statusDiv.innerHTML = "Recherche...";
+
+            const url = `https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/arrets/records?where=arrid%3D%22${id}%22&limit=1`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.results && data.results.length > 0) {
+                    const stop = data.results[0];
+                    const name = stop.arrname || "Nom inconnu";
+                    let typeDisplay = stop.arrtype || 'Non spécifié';
+                    const typeLower = typeDisplay.toLowerCase();
+                    
+                    // --- LOGIQUE DE RENOMMAGE & FORÇAGE ---
+                    let isAccessible;
+                    let mention = "";
+
+                    // Renommage Rail -> RER
+                    if (typeLower === "rail") {
+                        typeDisplay = "RER";
+                    }
+
+                    if (typeLower.includes("bus")) {
+                        isAccessible = true; // Forcé car c'est un bus
+                        mention = "<br><span class='info-tag'>✓ Validé (Règle : Tous les bus sont accessibles)</span>";
+                    } else {
+                        // Pour le reste (Métro, RER/Train), on garde la donnée réelle
+                        isAccessible = (stop.arraccessibility === "true" || stop.arraccessibility === true);
+                    }
+                    // ---------------------------------------
+
+                    statusDiv.className = "success";
+                    statusDiv.innerHTML = `
+                        <strong>Arrêt trouvé !</strong><br>
+                        Station : ${name}<br>
+                        Type : ${typeDisplay}<br>
+                        Accessibilité : ${isAccessible ? "♿ Accessible" : "❌ Non accessible"}
+                        ${mention}
+                    `;
+                } else {
+                    statusDiv.className = "error";
+                    statusDiv.innerHTML = `Aucun arrêt trouvé pour l'ID <strong>${id}</strong>.`;
+                }
+            } catch (e) {
+                statusDiv.className = "error";
+                statusDiv.innerHTML = "Erreur : " + e.message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -4,7 +4,8 @@ const styleMap = {
     'jawg-streets': 'Plan Urbain',
     'jawg-sunny': 'Ensoleillé',
     'jawg-terrain': 'Relief',
-    'jawg-dark': 'Mode Sombre'
+    'jawg-dark': 'Mode Sombre',
+    'jawg-light': 'Mode Clair',
 };
 
 export function initTileLayers(apiKey) {

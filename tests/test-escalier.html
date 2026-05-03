@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Dataset - Escaliers Paris</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; background: #f0f2f5; }
+        .card { background: white; padding: 20px; border-radius: 8px; shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .obstacle { border-left: 4px solid #e74c3c; background: #fdf2f2; padding: 10px; margin: 10px 0; }
+        pre { font-size: 0.8em; background: #eee; padding: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Visualisation des Escaliers (Paris)</h2>
+        <button onclick="fetchEscaliers()">Charger les escaliers à proximité</button>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function fetchEscaliers() {
+            const resDiv = document.getElementById('results');
+            resDiv.innerHTML = "Chargement de la totalité des données...";
+            
+            const url = "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/plan-de-voirie-voies-en-escalier/records?limit=-1";
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                resDiv.innerHTML = `<h3>${data.total_count} escaliers répertoriés</h3>`;
+
+                data.results.forEach(item => {
+                    resDiv.innerHTML += `
+                        <div class="obstacle">
+                            <strong>${item.libelle || 'Escalier sans nom'}</strong> (Arrondissement: ${item.annexe || 'NC'})<br>
+                            Coordonnées : ${item.geo_point_2d.lat}, ${item.geo_point_2d.lon}
+                        </div>`;
+                });
+            } catch (e) { resDiv.innerHTML = "Erreur: " + e.message; }
+        }
+    </script>
+</body>
+</html>

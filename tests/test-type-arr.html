@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>HandiMap - Types de Transports</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background-color: #f4f7f6; }
+        .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .type-item { 
+            display: flex; justify-content: space-between; align-items: center; padding: 12px; 
+            border-bottom: 1px solid #eee; 
+        }
+        .type-name { font-weight: bold; color: #34495e; text-transform: capitalize; }
+        .count-badge { background: #3498db; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.85em; }
+        button { width: 100%; padding: 15px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1em; font-weight: bold; }
+        button:hover { background: #2980b9; }
+        #results { margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Types de Transports (ArRType)</h2>
+        <p>Cliquez pour lister les catégories d'arrêts disponibles dans le dataset.</p>
+        
+        <button onclick="getArRTypes()" id="btn">ANALYSER LES TYPES</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function getArRTypes() {
+        const resDiv = document.getElementById('results');
+        resDiv.innerHTML = "<em>Analyse en cours...</em>";
+
+        // API v2.1 avec agrégation
+        const url = "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/arrets/records?group_by=arrtype&limit=50";
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            resDiv.innerHTML = "";
+            
+            data.results.forEach(item => {
+                const typeName = item.arrtype || "Non spécifié";
+
+                resDiv.innerHTML += `
+                    <div class="type-item">
+                        <span class="type-name">📍 ${typeName}</span>
+                    </div>`;
+            });
+
+        } catch (e) {
+            resDiv.innerHTML = `<div style="color:red">Erreur : ${e.message}</div>`;
+        }
+    }
+    </script>
+</body>
+</html>

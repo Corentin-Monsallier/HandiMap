@@ -28,6 +28,21 @@ export async function fetchAllRoutes(startCoords, endCoords) {
 }
 
 /**
+ * Format journey duration to human-readable string
+ * @param {number} seconds - Duration in seconds
+ * @returns {string} Formatted duration (e.g., "45 min" or "1h 30 min")
+ */
+function formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours === 0) {
+        return `${minutes} min`;
+    }
+    return `${hours}h ${minutes} min`;
+}
+
+/**
  * Find the best route based on elevation difficulty
  * @param {Array} journeys - Array of journey objects
  * @returns {Promise<Object>} Object with bestRoute, bestIndex, and all route scores
@@ -47,18 +62,25 @@ async function findBestRoute(journeys) {
         index,
         score: scoreRoute(evaluation),
         stats: evaluation.stats,
-        criticalPoints: evaluation.criticalPoints
+        criticalPoints: evaluation.criticalPoints,
+        duration: journeys[index].duration,
+        durationFormatted: formatDuration(journeys[index].duration)
     }));
     
-    // Sort by score (lower = better)
-    scores.sort((a, b) => a.score - b.score);
+    // Sort by score (lower = better), then by duration (lower = better) as tiebreaker
+    scores.sort((a, b) => {
+        if (a.score !== b.score) {
+            return a.score - b.score;
+        }
+        return a.duration - b.duration;
+    });
     
     const bestScore = scores[0];
-    console.log(`[Routes] Best route (index ${bestScore.index}): Score=${bestScore.score.toFixed(0)}, CriticalPoints=${bestScore.stats.criticalPointsCount}, Uphill=${bestScore.stats.totalUphill}m`);
+    console.log(`[Routes] Best route (index ${bestScore.index}): Score=${bestScore.score.toFixed(0)}, Time=${bestScore.durationFormatted}, CriticalPoints=${bestScore.stats.criticalPointsCount}, Uphill=${bestScore.stats.totalUphill}m`);
     
     // Log alternatives
     if (scores.length > 1) {
-        console.log(`[Routes] Alternatives:`, scores.slice(1, 3).map(s => `Index ${s.index} (Score: ${s.score.toFixed(0)})`));
+        console.log(`[Routes] Alternatives:`, scores.slice(1, 3).map(s => `Index ${s.index} (Score: ${s.score.toFixed(0)}, Time: ${s.durationFormatted})`).join(' | '));
     }
     
     return {
@@ -121,21 +143,25 @@ export async function displaySpecificJourney(journey, mapInstance) {
  * @param {Object} mapInstance - Leaflet map instance
  */
 export async function displayBestRoute(journeys, mapInstance) {
+    console.log("TEST")
     const result = await findBestRoute(journeys);
-    
+
     if (!result.bestRoute) {
         console.warn('No routes available');
         return;
     }
-    
+
     // Display the best route
     await displaySpecificJourney(result.bestRoute, mapInstance);
-    
+
     // Update markers with the best route's elevation data
     if (result.bestElevation.criticalPoints.length > 0) {
         clearElevationMarkers(mapInstance);
         displayCriticalPoints(result.bestElevation.criticalPoints, mapInstance);
     }
+
+    // Return scores for UI ordering
+    return result.scores;
 }
 
 export function clearRoute(mapInstance) {

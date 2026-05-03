@@ -272,9 +272,13 @@ export function scoreRoute(elevationData) {
     const { stats, criticalPoints } = elevationData;
     
     // Weighted scoring: prioritize avoiding steep sections
-    const criticalPointsScore = parseInt(stats.criticalPointsCount) * 100; // Heavily weight critical points
-    const uphillScore = parseInt(stats.totalUphill) * 0.5; // Moderate weight for total uphill
-    const maxSlopeScore = Math.abs(parseFloat(stats.steepestSlope)) * 10; // Weight max slope
+    // Critical points are the PRIMARY factor - heavily penalize any steep sections
+    const criticalPointsScore = parseInt(stats.criticalPointsCount) * 10000; // VERY heavy weight
+    const uphillScore = parseInt(stats.totalUphill) * 1; // Secondary: total uphill
+    const maxSlopeScore = Math.abs(parseFloat(stats.steepestSlope)) * 100; // Tertiary: max slope
     
-    return criticalPointsScore + uphillScore + maxSlopeScore;
+    const totalScore = criticalPointsScore + uphillScore + maxSlopeScore;
+    console.log(`[Score] CriticalPts=${stats.criticalPointsCount} (${criticalPointsScore}) + Uphill=${stats.totalUphill}m (${uphillScore}) + MaxSlope=${stats.steepestSlope}% (${maxSlopeScore}) = ${totalScore}`);
+    
+    return totalScore;
 }

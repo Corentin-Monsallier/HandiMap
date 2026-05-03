@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 import { map, initTileLayers } from './map-engine.js';
 import { fetchSuggestions, searchAddress } from './search-logic.js';
-import { fetchAllRoutes, displaySpecificJourney } from './routing-engine.js';
+import { fetchAllRoutes, displaySpecificJourney, displayBestRoute } from './routing-engine.js';
 
 initTileLayers(CONFIG.JAWG_API_KEY);
 
@@ -19,27 +19,40 @@ document.getElementById('search-container').addEventListener('submit', async (e)
         
         if (start && end) {
             const journeys = await fetchAllRoutes(start, end);
-            renderOptions(journeys);
+            const scores = await displayBestRoute(journeys, map);
+            renderOptions(journeys, scores);
         }
     }
 });
 
-function renderOptions(journeys) {
+function renderOptions(journeys, orderedScores) {
     journeyList.innerHTML = '';
     itinerarySelector.style.display = journeys.length ? 'block' : 'none';
 
-    journeys.forEach((j, i) => {
+    // Use provided scores order if available, otherwise use original order
+    const displayOrder = orderedScores ? orderedScores.map(s => s.index) : journeys.map((_, i) => i);
+
+    displayOrder.forEach((journeyIndex, displayIndex) => {
+        const j = journeys[journeyIndex];
         const item = document.createElement('div');
-        item.className = `journey-item ${i === 0 ? 'active' : ''}`;
-        
+        item.className = `journey-item ${displayIndex === 0 ? 'active' : ''}`;
+
         const logos = j.sections
             .filter(s => s.type === 'public_transport')
             .map(s => `<span class="line-badge" style="background:#${s.display_informations.color}">${s.display_informations.code}</span>`)
             .join(' → ');
 
         const duration = Math.round(j.duration / 60);
-        item.innerHTML = `<strong>Option ${i+1}</strong> - ${duration} min<br>${logos || '🚶 Marche'}`;
-        
+
+        // Add recommendation badge for best route
+        const recommendBadge = displayIndex === 0 ? '<span class="recommend-badge">⭐ Recommandé</span>' : '';
+
+        // Add score info if available
+        const scoreInfo = orderedScores ?
+            `<div class="score-info">Score: ${orderedScores[displayIndex].score.toFixed(0)}</div>` : '';
+
+        item.innerHTML = `${recommendBadge}<strong>Option ${displayIndex+1}</strong> - ${duration} min<br>${logos || '🚶 Marche'}${scoreInfo}`;
+
         item.onclick = () => {
             document.querySelectorAll('.journey-item').forEach(el => el.classList.remove('active'));
             item.classList.add('active');
@@ -48,7 +61,7 @@ function renderOptions(journeys) {
         journeyList.appendChild(item);
     });
 
-    if (journeys.length) displaySpecificJourney(journeys[0], map);
+    if (journeys.length) displaySpecificJourney(journeys[displayOrder[0]], map);
 }
 
 // Autocomplétion

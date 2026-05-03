@@ -4,6 +4,41 @@ import { fetchElevationData, calculateSlopes, getCriticalPoints, displayCritical
 let routingLayers = [];
 let currentCriticalPoints = [];
 
+/**
+ * Fonction utilitaire pour interroger l'accessibilité d'un arrêt via l'API IDFM
+ */
+async function getStopAccessibility(stopId) {
+    const cleanId = stopId.includes(':') ? stopId.split(':').pop() : stopId;
+    const url = `https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/arrets/records?where=arrid%3D%22${cleanId}%22&limit=1`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.results && data.results.length > 0) {
+            const stop = data.results[0];
+            let type = stop.arrtype || "Transport";
+            
+            const rawAccess = stop.arraccessibility; 
+            let isAccessible = (rawAccess === "true" || rawAccess === true);
+            
+            if (type.toLowerCase().includes("bus")) {
+                isAccessible = true;
+            }
+
+            return {
+                accessible: isAccessible,
+                rawStatus: rawAccess, 
+                name: stop.arrname,
+                type: type === "rail" ? "RER" : type
+            };
+        }
+    } catch (e) {
+        console.error("Erreur accessibilité pour l'arrêt " + stopId, e);
+    }
+    return null;
+}
+
 function getSectionStyle(section) {
     if (section.type === 'street_network' || section.type === 'transfer' || section.type === 'waiting') {
         return { color: '#808080', weight: 5, opacity: 0.6, dashArray: '5, 10' };
@@ -27,109 +62,136 @@ export async function fetchAllRoutes(startCoords, endCoords) {
     }
 }
 
-/**
- * Format journey duration to human-readable string
- * @param {number} seconds - Duration in seconds
- * @returns {string} Formatted duration (e.g., "45 min" or "1h 30 min")
- */
 function formatDuration(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (hours === 0) {
-        return `${minutes} min`;
-    }
-    return `${hours}h ${minutes} min`;
+    return hours === 0 ? `${minutes} min` : `${hours}h ${minutes} min`;
 }
 
-/**
- * Find the best route based on elevation difficulty
- * @param {Array} journeys - Array of journey objects
- * @returns {Promise<Object>} Object with bestRoute, bestIndex, and all route scores
- */
+async function isJourneyInvalid(journey) {
+    const processedStops = new Set();
+    for (const section of journey.sections) {
+        if (section.type === 'public_transport') {
+            const transportMode = section.display_informations?.physical_mode?.toLowerCase() || "";
+            if (transportMode.includes("bus")) continue; 
+
+            const stopsToChecks = [section.from.id, section.to.id];
+            for (const stopId of stopsToChecks) {
+                if (!processedStops.has(stopId)) {
+                    const access = await getStopAccessibility(stopId);
+                    if (access && (access.rawStatus === "false" || access.rawStatus === false)) {
+                        return true;
+                    }
+                    processedStops.add(stopId);
+                }
+            }
+        }
+    }
+    return false;
+}
+
 async function findBestRoute(journeys) {
     if (journeys.length === 0) return { bestRoute: null, bestIndex: -1, scores: [] };
-    
-    console.log(`[Routes] Evaluating ${journeys.length} routes for elevation difficulty...`);
-    
-    // Evaluate all routes in parallel
-    const evaluations = await Promise.all(
-        journeys.map(journey => evaluateRouteElevation(journey))
-    );
-    
-    // Score each route
-    const scores = evaluations.map((evaluation, index) => ({
-        index,
-        score: scoreRoute(evaluation),
-        stats: evaluation.stats,
-        criticalPoints: evaluation.criticalPoints,
-        duration: journeys[index].duration,
-        durationFormatted: formatDuration(journeys[index].duration)
-    }));
-    
-    // Sort by score (lower = better), then by duration (lower = better) as tiebreaker
-    scores.sort((a, b) => {
-        if (a.score !== b.score) {
-            return a.score - b.score;
-        }
-        return a.duration - b.duration;
-    });
-    
-    const bestScore = scores[0];
-    console.log(`[Routes] Best route (index ${bestScore.index}): Score=${bestScore.score.toFixed(0)}, Time=${bestScore.durationFormatted}, CriticalPoints=${bestScore.stats.criticalPointsCount}, Uphill=${bestScore.stats.totalUphill}m`);
-    
-    // Log alternatives
-    if (scores.length > 1) {
-        console.log(`[Routes] Alternatives:`, scores.slice(1, 3).map(s => `Index ${s.index} (Score: ${s.score.toFixed(0)}, Time: ${s.durationFormatted})`).join(' | '));
+    const validScores = [];
+
+    for (let i = 0; i < journeys.length; i++) {
+        const journey = journeys[i];
+        const invalid = await isJourneyInvalid(journey);
+        if (invalid) continue;
+
+        const elevationEval = await evaluateRouteElevation(journey);
+        const score = scoreRoute(elevationEval);
+
+        validScores.push({
+            index: i,
+            score: score,
+            stats: elevationEval.stats,
+            criticalPoints: elevationEval.criticalPoints,
+            duration: journey.duration,
+            durationFormatted: formatDuration(journey.duration)
+        });
     }
     
+    if (validScores.length === 0) return { bestRoute: null, bestIndex: -1, scores: [] };
+
+    validScores.sort((a, b) => (a.score !== b.score ? a.score - b.score : a.duration - b.duration));
+    const bestScore = validScores[0];
     return {
         bestRoute: journeys[bestScore.index],
         bestIndex: bestScore.index,
-        scores: scores,
-        bestElevation: {
-            stats: bestScore.stats,
-            criticalPoints: bestScore.criticalPoints
-        }
+        scores: validScores,
+        bestElevation: { stats: bestScore.stats, criticalPoints: bestScore.criticalPoints }
     };
 }
 
 export async function displaySpecificJourney(journey, mapInstance) {
     routingLayers.forEach(l => mapInstance.removeLayer(l));
     routingLayers = [];
-    
-    // Collect all coordinates from all sections (for display)
     const allCoordinates = [];
     
-    journey.sections.forEach(section => {
+    for (const section of journey.sections) {
         if (section.geojson?.coordinates) {
             const coords = section.geojson.coordinates.map(c => [c[1], c[0]]);
             const poly = L.polyline(coords, getSectionStyle(section)).addTo(mapInstance);
             routingLayers.push(poly);
-            
-            // Collect coordinates for elevation analysis (only for pedestrian sections)
-            if (section.type === 'street_network') {
-                allCoordinates.push(...coords);
+            if (section.type === 'street_network') allCoordinates.push(...coords);
+        }
+
+        if (section.type === 'public_transport') {
+            const stops = [
+                { data: section.from, label: "Montée / Correspondance" },
+                { data: section.to, label: "Descente / Correspondance" }
+            ];
+
+            for (const stop of stops) {
+                const coords = [stop.data.stop_point.coord.lat, stop.data.stop_point.coord.lon];
+                const accessInfo = await getStopAccessibility(stop.data.id);
+
+                // --- NOUVELLE LOGIQUE DE COULEURS ---
+                let color = "#808080"; // Par défaut : Gris (Inconnu)[cite: 3]
+                let statusEmoji = "❓";
+                let statusText = "Inconnu";
+
+                if (accessInfo?.accessible) {
+                    color = "#27ae60"; // Vert (Accessible)[cite: 3]
+                    statusEmoji = "♿";
+                    statusText = "Accessible";
+                } else if (accessInfo?.rawStatus === "partial") {
+                    color = "#f1c40f"; // Jaune (Partiel)[cite: 3]
+                    statusEmoji = "⚠️";
+                    statusText = "Partiellement Accessible";
+                }
+                // ------------------------------------
+
+                const stopMarker = L.circleMarker(coords, {
+                    radius: 6,
+                    fillColor: color,
+                    color: "#fff",
+                    weight: 2,
+                    fillOpacity: 1
+                }).addTo(mapInstance);
+
+                stopMarker.bindPopup(`
+                    <div style="font-family: sans-serif;">
+                        <strong style="color: #2c3e50;">${stop.label}</strong><br>
+                        <span style="font-size: 1.1em; font-weight: bold;">${stop.data.name}</span><br>
+                        <hr style="margin: 5px 0; border: 0; border-top: 1px solid #eee;">
+                        Type : ${accessInfo?.type || 'Transport'}<br>
+                        Accessibilité : <strong>${statusEmoji} ${statusText}</strong>
+                    </div>
+                `);
+                routingLayers.push(stopMarker);
             }
         }
-    });
+    }
 
-    // Calculate elevation and slopes if we have pedestrian sections
     if (allCoordinates.length > 1) {
         try {
             const elevationData = await fetchElevationData(allCoordinates);
             const slopesData = calculateSlopes(elevationData);
             currentCriticalPoints = getCriticalPoints(slopesData);
-            
-            // Display critical points on map
             displayCriticalPoints(currentCriticalPoints, mapInstance);
-            
-            // Log elevation stats to console
-            const stats = getElevationStats(slopesData);
-            console.log(`Élévation - Montée: ${stats.totalUphill}m | Descente: ${stats.totalDownhill}m | Points critiques: ${stats.criticalPointsCount} | Pente max: ${stats.steepestSlope}%`);
-        } catch (err) {
-            console.error('Erreur analyse élévation:', err);
-        }
+        } catch (err) {}
     }
 
     if (routingLayers.length > 0) {
@@ -137,30 +199,17 @@ export async function displaySpecificJourney(journey, mapInstance) {
     }
 }
 
-/**
- * Display the best route (lowest elevation difficulty) from a list of journeys
- * @param {Array} journeys - Array of journey objects from Navitia
- * @param {Object} mapInstance - Leaflet map instance
- */
 export async function displayBestRoute(journeys, mapInstance) {
-    console.log("TEST")
     const result = await findBestRoute(journeys);
-
-    if (!result.bestRoute) {
-        console.warn('No routes available');
-        return;
+    if (!result || !result.bestRoute) {
+        alert("Désolé, aucun trajet accessible n'a été trouvé.");
+        return [];
     }
-
-    // Display the best route
     await displaySpecificJourney(result.bestRoute, mapInstance);
-
-    // Update markers with the best route's elevation data
     if (result.bestElevation.criticalPoints.length > 0) {
         clearElevationMarkers(mapInstance);
         displayCriticalPoints(result.bestElevation.criticalPoints, mapInstance);
     }
-
-    // Return scores for UI ordering
     return result.scores;
 }
 

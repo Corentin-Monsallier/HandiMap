@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { fetchElevationData, calculateSlopes, getCriticalPoints, displayCriticalPoints, getElevationStats, clearElevationMarkers } from './elevation-engine.js';
+import { fetchElevationData, calculateSlopes, getCriticalPoints, displayCriticalPoints, getElevationStats, clearElevationMarkers, extractPedestrianCoordinates, evaluateRouteElevation, scoreRoute } from './elevation-engine.js';
 
 let routingLayers = [];
 let currentCriticalPoints = [];
@@ -27,11 +27,56 @@ export async function fetchAllRoutes(startCoords, endCoords) {
     }
 }
 
+/**
+ * Find the best route based on elevation difficulty
+ * @param {Array} journeys - Array of journey objects
+ * @returns {Promise<Object>} Object with bestRoute, bestIndex, and all route scores
+ */
+async function findBestRoute(journeys) {
+    if (journeys.length === 0) return { bestRoute: null, bestIndex: -1, scores: [] };
+    
+    console.log(`[Routes] Evaluating ${journeys.length} routes for elevation difficulty...`);
+    
+    // Evaluate all routes in parallel
+    const evaluations = await Promise.all(
+        journeys.map(journey => evaluateRouteElevation(journey))
+    );
+    
+    // Score each route
+    const scores = evaluations.map((evaluation, index) => ({
+        index,
+        score: scoreRoute(evaluation),
+        stats: evaluation.stats,
+        criticalPoints: evaluation.criticalPoints
+    }));
+    
+    // Sort by score (lower = better)
+    scores.sort((a, b) => a.score - b.score);
+    
+    const bestScore = scores[0];
+    console.log(`[Routes] Best route (index ${bestScore.index}): Score=${bestScore.score.toFixed(0)}, CriticalPoints=${bestScore.stats.criticalPointsCount}, Uphill=${bestScore.stats.totalUphill}m`);
+    
+    // Log alternatives
+    if (scores.length > 1) {
+        console.log(`[Routes] Alternatives:`, scores.slice(1, 3).map(s => `Index ${s.index} (Score: ${s.score.toFixed(0)})`));
+    }
+    
+    return {
+        bestRoute: journeys[bestScore.index],
+        bestIndex: bestScore.index,
+        scores: scores,
+        bestElevation: {
+            stats: bestScore.stats,
+            criticalPoints: bestScore.criticalPoints
+        }
+    };
+}
+
 export async function displaySpecificJourney(journey, mapInstance) {
     routingLayers.forEach(l => mapInstance.removeLayer(l));
     routingLayers = [];
     
-    // Collect all coordinates from all sections
+    // Collect all coordinates from all sections (for display)
     const allCoordinates = [];
     
     journey.sections.forEach(section => {
@@ -67,6 +112,29 @@ export async function displaySpecificJourney(journey, mapInstance) {
 
     if (routingLayers.length > 0) {
         mapInstance.fitBounds(L.featureGroup(routingLayers).getBounds().pad(0.2));
+    }
+}
+
+/**
+ * Display the best route (lowest elevation difficulty) from a list of journeys
+ * @param {Array} journeys - Array of journey objects from Navitia
+ * @param {Object} mapInstance - Leaflet map instance
+ */
+export async function displayBestRoute(journeys, mapInstance) {
+    const result = await findBestRoute(journeys);
+    
+    if (!result.bestRoute) {
+        console.warn('No routes available');
+        return;
+    }
+    
+    // Display the best route
+    await displaySpecificJourney(result.bestRoute, mapInstance);
+    
+    // Update markers with the best route's elevation data
+    if (result.bestElevation.criticalPoints.length > 0) {
+        clearElevationMarkers(mapInstance);
+        displayCriticalPoints(result.bestElevation.criticalPoints, mapInstance);
     }
 }
 

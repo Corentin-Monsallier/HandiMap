@@ -1,7 +1,10 @@
 let elevationMarkers = [];
 
+const CORS_PROXY = 'https://corsproxy.io/?';
+const ELEVATION_API_BASE = 'https://api.opentopodata.org/v1/srtm30m';
+
 /**
- * Fetch elevation data for coordinates from Open-Elevation API
+ * Fetch elevation data for coordinates from OpenTopoData API
  * @param {Array<[lat, lng]>} coordinates - Array of [latitude, longitude] pairs
  * @returns {Promise<Array>} Array of {lat, lng, elevation} objects
  */
@@ -14,12 +17,13 @@ export async function fetchElevationData(coordinates) {
         
         if (sampledCoordinates.length === 0) return [];
 
-        // Format coordinates for Open-Elevation API: lat,lng|lat,lng|...
+        // Format coordinates for OpenTopoData API: lat,lng|lat,lng|...
         const locationsParam = sampledCoordinates
             .map(coord => `${coord[0]},${coord[1]}`)
             .join('|');
         
-        const url = `https://api.open-elevation.com/api/v1/lookup?locations=${locationsParam}`;
+        const apiUrl = `${ELEVATION_API_BASE}?locations=${locationsParam}`;
+        const url = CORS_PROXY + encodeURIComponent(apiUrl);
         const response = await fetch(url);
         
         if (!response.ok) {
@@ -31,8 +35,8 @@ export async function fetchElevationData(coordinates) {
         
         if (data.results) {
             return data.results.map(result => ({
-                lat: result.latitude,
-                lng: result.longitude,
+                lat: result.location.lat,
+                lng: result.location.lng,
                 elevation: result.elevation
             }));
         }
@@ -121,12 +125,12 @@ function calculateDistance(point1, point2) {
 }
 
 /**
- * Filter critical points (slope > 8%)
+ * Filter critical points (slope > 9%)
  * @param {Array} slopesData - Array with slope data
  * @returns {Array} Critical points with slope > 8%
  */
 export function getCriticalPoints(slopesData) {
-    return slopesData.filter(point => Math.abs(point.slope) > 10);
+    return slopesData.filter(point => Math.abs(point.slope) > 9);
 }
 
 /**
@@ -194,4 +198,83 @@ export function getElevationStats(slopesData) {
         criticalPointsCount: criticalPoints.length,
         steepestSlope: Math.max(...slopesData.map(p => p.slope)).toFixed(1)
     };
+}
+
+/**
+ * Extract pedestrian coordinates from a journey (only street_network sections)
+ * @param {Object} journey - Journey object from Navitia
+ * @returns {Array<[lat, lng]>} Array of pedestrian coordinates
+ */
+export function extractPedestrianCoordinates(journey) {
+    const pedestrianCoords = [];
+    
+    journey.sections.forEach(section => {
+        if (section.type === 'street_network' && section.geojson?.coordinates) {
+            const coords = section.geojson.coordinates.map(c => [c[1], c[0]]);
+            pedestrianCoords.push(...coords);
+        }
+    });
+    
+    return pedestrianCoords;
+}
+
+/**
+ * Evaluate elevation for a complete journey (pedestrian sections only)
+ * @param {Object} journey - Journey object from Navitia
+ * @returns {Promise<Object>} Object with elevation stats and critical points
+ */
+export async function evaluateRouteElevation(journey) {
+    const pedestrianCoords = extractPedestrianCoordinates(journey);
+    
+    if (pedestrianCoords.length < 2) {
+        return {
+            stats: {
+                totalUphill: '0',
+                totalDownhill: '0',
+                criticalPointsCount: 0,
+                steepestSlope: '0',
+                minElevation: '0',
+                maxElevation: '0'
+            },
+            criticalPoints: []
+        };
+    }
+    
+    const elevationData = await fetchElevationData(pedestrianCoords);
+    
+    if (elevationData.length === 0) {
+        return {
+            stats: {
+                totalUphill: '0',
+                totalDownhill: '0',
+                criticalPointsCount: 0,
+                steepestSlope: '0',
+                minElevation: '0',
+                maxElevation: '0'
+            },
+            criticalPoints: []
+        };
+    }
+    
+    const slopesData = calculateSlopes(elevationData);
+    const criticalPoints = getCriticalPoints(slopesData);
+    const stats = getElevationStats(slopesData);
+    
+    return { stats, criticalPoints };
+}
+
+/**
+ * Score a route based on elevation difficulty (lower score = better/easier)
+ * @param {Object} elevationData - Object with stats and critical points from evaluateRouteElevation
+ * @returns {number} Score (lower is better)
+ */
+export function scoreRoute(elevationData) {
+    const { stats, criticalPoints } = elevationData;
+    
+    // Weighted scoring: prioritize avoiding steep sections
+    const criticalPointsScore = parseInt(stats.criticalPointsCount) * 100; // Heavily weight critical points
+    const uphillScore = parseInt(stats.totalUphill) * 0.5; // Moderate weight for total uphill
+    const maxSlopeScore = Math.abs(parseFloat(stats.steepestSlope)) * 10; // Weight max slope
+    
+    return criticalPointsScore + uphillScore + maxSlopeScore;
 }

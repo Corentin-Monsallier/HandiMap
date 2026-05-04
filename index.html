@@ -10,16 +10,16 @@
 </head>
 <body>
     <form id="search-container" class="search-container">
-        <input type="text" id="start-input" list="start-suggestions" placeholder="Point de départ..." autocomplete="off" class="main-input">
+        <input type="text" id="start-input" list="start-suggestions" placeholder="Starting Point..." autocomplete="off" class="main-input">
         <datalist id="start-suggestions"></datalist>
         
-        <input type="text" id="end-input" list="end-suggestions" placeholder="Point d'arrivée..." autocomplete="off" class="main-input" style="margin-top: 8px;">
+        <input type="text" id="end-input" list="end-suggestions" placeholder="Arrival Point..." autocomplete="off" class="main-input" style="margin-top: 8px;">
         <datalist id="end-suggestions"></datalist>
 
-        <button type="submit" id="btn-global">CALCULER L'ITINÉRAIRE</button>
+        <button type="submit" id="btn-global">FIND ITINERARY</button>
 
         <div id="itinerary-selector" style="display: none; margin-top: 15px; max-height: 400px; overflow-y: auto;">
-            <h4 style="margin: 5px 0; font-size: 14px; color: #333;">Trajets disponibles :</h4>
+            <h4 style="margin: 5px 0; font-size: 14px; color: #333;">Available Journeys :</h4>
             <div id="journey-list"></div>
         </div>
     </form>

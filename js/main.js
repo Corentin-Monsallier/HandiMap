@@ -45,7 +45,7 @@ function renderOptions(journeys, orderedScores) {
         const duration = Math.round(j.duration / 60);
 
         // Add recommendation badge for best route
-        const recommendBadge = displayIndex === 0 ? '<span class="recommend-badge">⭐ Recommandé <br></span>' : '';
+        const recommendBadge = displayIndex === 0 ? '<span class="recommend-badge">⭐ Recommended <br></span>' : '';
 
         // Add score info if available
         const scoreInfo = orderedScores ?

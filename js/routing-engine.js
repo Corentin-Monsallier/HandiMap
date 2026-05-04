@@ -102,14 +102,17 @@ async function findBestRoute(journeys) {
         const elevationEval = await evaluateRouteElevation(journey);
         const score = scoreRoute(elevationEval);
 
-        validScores.push({
-            index: i,
-            score: score,
-            stats: elevationEval.stats,
-            criticalPoints: elevationEval.criticalPoints,
-            duration: journey.duration,
-            durationFormatted: formatDuration(journey.duration)
-        });
+        if (score != 0){
+            validScores.push({
+                index: i,
+                score: score,
+                stats: elevationEval.stats,
+                criticalPoints: elevationEval.criticalPoints,
+                duration: journey.duration,
+                durationFormatted: formatDuration(journey.duration)
+            });
+        }
+        
     }
     
     if (validScores.length === 0) return { bestRoute: null, bestIndex: -1, scores: [] };
@@ -128,7 +131,6 @@ export async function displaySpecificJourney(journey, mapInstance) {
     routingLayers.forEach(l => mapInstance.removeLayer(l));
     routingLayers = [];
     const allCoordinates = [];
-    
     for (const section of journey.sections) {
         if (section.geojson?.coordinates) {
             const coords = section.geojson.coordinates.map(c => [c[1], c[0]]);
